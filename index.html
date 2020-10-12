@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <!-- This file has been downloaded from Bootsnipp.com. Enjoy! -->
+    <title>Chat - GSRH</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="bootstrap.min.css" rel="stylesheet">
+    <link href="select2.min.css" rel="stylesheet">
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link href="custom.css" rel="stylesheet">
+    <link href="sweetalert2.css" rel="stylesheet">
+    <script src="jquery.min.js"></script>
+	<script src="sweetalert2.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+    <script src="bootstrap.min.js"></script>
+    <script src="select2.min.js"></script>
+    <script src="jquery.lazy.min.js"></script>
+<script>
+//92,216,227,256,267,306,310,319
+//var userid = prompt("Please enter userid ", "");
+const KEY_USER_ID = "userid";
+var userid;
+var senderId;
+var receiverId;
+var currentConverstaionID = '';
+var convElement = '';
+var basePath = "uploads/";
+var userids = [];
+$(document).ready(function() {
+  $.urlParam = function(name){
+    var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
+    if (results==null) {
+      return null;
+    }
+    return decodeURI(results[1]) || 0;
+  }
+  if($.urlParam("userid")){
+    window.location.href = "/";
+    initChat($.urlParam("userid"));
+  }
+ });
+
+var hostName = window.location.hostname;
+if(hostName === "services.goodshepherdrecoveryhouse.org"){
+  var socket = io(`services.goodshepherdrecoveryhouse.org:8080`, {
+    transports: ['websocket'],
+    upgrade: false
+  });
+}else {
+  var socket = io(`localhost:8080`, {
+    transports: ['websocket'],
+    upgrade: false
+  });
+}
+/*
+Connect
+Connect_error
+Connect_timeout
+Reconnect, etc
+ */
+socket.on('connect',function(c){
+  console.log('connect event called');
+  socket.emit('check_user_logged_in');
+});
+
+socket.on('connect_error',function(err){
+  console.log('error connect event called');
+  console.log(err);
+});
+
+socket.on('connect_timeout',function(c){
+  console.log('connect timeout event called');
+});
+
+socket.on('recconnect',function(c){
+  console.log('reconnect event called');
+});
+
+socket.on('connect_failed', function() {
+  console.log('connection failed');
+})
+
+socket.on('error',function(err){
+  console.log(err);
+})
+
+$(document).ready(function () {
+  // var userid = localStorage.getItem("userid");
+  // console.log(userid);
+  // //localStorage.setItem("userid",$userid);
+  // //localStorage.setItem("username",$username);
+  // if(userid){
+  //   initChat(userid);
+  //   //localStorage.clear();
+  // }
+});
+
+$(document).ready(function(){
+	//check if user already logged in
+    //checkUserLoggedIn();
+})
+
+function checkUserLoggedIn(){
+  if(localStorage){
+    if(localStorage.getItem(KEY_USER_ID) > 0){
+      console.log('user '+localStorage.getItem(KEY_USER_ID)+' is already logged in');
+      initChat(localStorage.getItem(KEY_USER_ID));
+    }
+  }
+}
+
+socket.on('user_connected',function(users){
+	$.each(users,function(k,v){
+      setTimeout(function(){
+        $.each(users,function(k,v){
+          $('#'+v.userid).show();
+          console.log('new user '+v.userid);
+        })
+      },3000);
+	})
+});
+
+socket.on('new_user',function(users){
+    onlineUsers = users;
+    setTimeout(function(){
+        $.each(users,function(k,v){
+            $('#'+v.userid).show();
+            console.log('new user '+v.userid);
+        })
+    },3000);
+
+});
+
+socket.on('user_disconnected',function(data){
+	$('#'+data.userid).hide();
+	console.log('user disconnected '+data.userid);
+    onlineUsers = data.users;
+    setTimeout(function(){
+      $.each(data.users,function(k,v){
+        $('#'+v.userid).show();
+        console.log('new user '+v.userid);
+      })
+    },3000);
+});
+
+socket.on("typing",function(typerUserId){
+  if(receiverId == typerUserId){
+    var el = $('.heading-online');
+    $(el).empty();
+    $(el).append('typing ...');
+    $(el).show();
+  }
+});
+
+//check unread messages count
+socket.on('check_unread_messages',function(data){
+    console.log('called check unread messages');
+    getUnSeenMessagesCount(senderId);
+});
+
+//get messages
+socket.on('new_message',function(data){
+  console.log("received a new message");
+  date = new Date().toISOString();
+  var msg = data.message;
+  var time = getTime(date);
+  playTone();
+  if(data.receiverId === senderId){
+    if(currentConverstaionID === data.senderId){
+      var receiver = getReceiverRowSimpleText(msg,time);
+      convElement.append(receiver);
+      markConversationSeen(data.receiverId,data.senderId);
+    }else{
+      var n = $('#msgcount'+data.senderId);
+      var num = $(n).text();
+      $(n).empty();
+      var total = (parseInt(num)) + 1 ;
+      $(n).append(total);
+      $(n).parent().show();
+    }
+  }
+  scrollHeight();
+  var el = $('.heading-online');
+  $(el).empty();
+  $(el).append('online');
+  $(el).show();
+});
+
+socket.on('connect_this',function(data){
+  console.log('connect this');
+  if(localStorage){
+    localStorage.setItem(KEY_USER_ID,data.userid);
+  }
+  initChat(parseInt(data.userid));
+});
+
+
+
+//on message success to all staff
+socket.on('message_to_all_staff_sent',function (msg) {
+  //socket.emit("message_to_all_staff_sent","Message sent to All Staff");
+  popupMessage(true,msg);
+  hideSentToManyModal();
+
+});
+//on message success to all residents
+socket.on('message_to_all_residents_sent',function (msg) {
+  popupMessage(true,msg);
+  hideSentToManyModal();
+});
+//on message success to selected users
+socket.on('message_to_selected_users_sent',function (msg) {
+  popupMessage(true,msg);
+  hideSentToManyModal();
+});
+
+function hideSentToManyModal(){
+  $("#sendToManyModal").modal('hide');
+}
+$(document).ready(function(){
+  //add event to send button to send message
+  convElement = $("#conversation");
+
+  $("#message").keypress(function(){
+    socket.emit('typing',userid);
+  });
+
+  $('#btnSend').click(function(){
+    console.log('send button clicked');
+    var dd = new  Date().toISOString();
+    var time = getTime(dd);
+    var msg = $("#message");
+    var val = $(msg).val();
+    if($(msg).val().length > 0) {
+      socket.emit('send_message', {
+        "senderId": senderId,
+        "receiverId": receiverId,
+        "message": $(msg).val()
+      });
+      //append user sent message
+      var sender = getSenderRowSimpleText($(msg).val(),time);
+      convElement.append(sender);
+      $(msg).val("");
+      $('.heading-online').hide();
+      scrollHeight();
+    }else{
+      //$(msg).hint("please type message here !");
+    }
+    //store message in mysql for later user;
+  })
+});
+
+function getAllUsers(){
+  $("#usersList").empty();
+	$.ajax({
+		url : "/get_all_users",
+		method : "post",
+		type : "JSON",
+		success : function(res){
+            var baseURL = "http://services.goodshepherdrecoveryhouse.org/";
+			$json = $.parseJSON(res);
+			var element = $("#usersList");
+			$.each($json,function(k,v){
+				
+				if(v.Contact_ID == userid){
+					$('#username').html(' '+v.First_Name+" "+v.Last_Name);
+					if(v.src!=null) {
+                      $('.heading-avatar-icon img').attr('src', baseURL + v.src);
+                    }else{
+                      $('.heading-avatar-icon img').attr('src', 'no-img.png');
+                    }
+				}
+				var username = v.First_Name+' '+v.Last_Name;
+				if(v.Contact_ID != userid){
+					$html = '<div class="row sideBar-body user'+v.Contact_ID+'" onclick="selectUser(\''+username+'\','+v.Contact_ID+',\''+baseURL+v.src+'\')">\
+			            <div class="col-sm-3 col-xs-3 sideBar-avatar">\
+			              <div class="avatar-icon">';
+					if(v.src !=null){
+					  $html += '<img class="lazy" src="'+baseURL+v.src+'">';
+					}else{
+                      $html += '<img class="lazy" src="no-img.png">';
+                    }
+					$html +='</div></div><div class="col-sm-9 col-xs-9 sideBar-main">\
+			              <div class="row">\
+			                <div class="col-sm-8 col-xs-8 sideBar-name">\
+			                  <span class="name-meta">'+username+'<i id="'+v.Contact_ID+'" class="badge badge-success" style="display:none;"></i></span>\
+			                </div>\
+			                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">\
+			                  <div style="display:none" class="msgCounter"><i id="msgcount'+v.Contact_ID+'" class="">0</i></div>\
+			                </div></div></div></div>';
+	          		$(element).append($html);
+	          	}
+
+			});
+
+			getUnSeenMessagesCount(userid);
+
+		},
+		error : function(err){
+
+		}
+	})
+}
+
+function getAllClients(){
+  $('select[name=users]').empty();
+  $.ajax({
+    url : "/get_all_clients",
+    method : "post",
+    type : "JSON",
+    data:{"senderId":senderId},
+    success : function(res){
+      $json = $.parseJSON(res);
+      var element = $("#usersList");
+      $.each($json,function(k,v){
+          var option = '<option value="'+v.Contact_ID+'">'+v.username+'</option>'
+          $('select[name=users]').append(option);
+      });
+      $("select[name=users]").select2();
+    },
+    error : function(err){
+
+    }
+  })
+}
+
+function getUnSeenMessagesCount(senderId){
+	$.ajax({
+		url:'/get_unseen_messages_count',
+		type : "POST",
+		data : {"senderId":senderId},
+		success:function($res){
+			$data = JSON.parse($res);
+			if($data.length > 0){
+				$.each(JSON.parse($res),function(k,v){
+					updateMessageCounter(v.senderId,v.total);
+				});
+			}else{
+				console.log('no unseen message'+0);
+				updateMessageCounter(receiverId,0);
+			}
+		},
+		error:function(err){
+
+		}
+	})
+}
+
+//select user to start chat with
+function selectUser(username,recID,imgSrc){
+    convElement.empty();
+	receiverId = recID;
+	currentConverstaionID = recID;
+	$('.heading-name-meta').html(''+username);
+	if(imgSrc.includes('null')) {
+      $(".receiverImg").attr('src', 'no-img.png');
+    }else{
+      $(".receiverImg").attr('src', imgSrc);
+    }
+	selectUserRow(recID);
+	//get previous converstions
+	getConversations(receiverId,userid);
+	$('.conversation').show();
+    $('.emptyMsg').hide();
+    $(".heading-online").text("");
+    addPopupMenuUser();
+}
+
+function updateTime(){
+  if(receiverId){
+      getConversations(receiverId,senderId);
+  }
+}
+
+function addPopupMenuUser(){
+  var phoneNumber = getReceiverPhoneNumber(receiverId);
+
+}
+
+function selectUserRow(userid){
+  var sidebar = $('.sideBar-body');
+  $.each(sidebar,function(k,v){
+    if($(v).hasClass('user'+userid)){
+      $(v).css('background',"#cdcdd0");
+    }else{
+      $(v).css('background',"none");
+    }
+  });
+}
+
+function getConversations(receiverId,senderId){
+	$.ajax({
+		url:'/get_conversations',
+		type : "POST",
+		data : {"receiverId":receiverId,"senderId":senderId},
+		success:function($res){
+			convElement.empty();
+			$.each(JSON.parse($res),function(k,v){
+				var time = getTime(v.sentOn);
+				var row = "";
+                var fileName = getFileNameFromPath(v.message);
+                var fileSize = 0;
+                if(v.isAttachment === 1){
+                  fileSize = getFileSize(v.message);
+                }
+				//sender row
+				if(parseInt(v.senderId) == parseInt(userid)){
+				    if(v.isAttachment === 1) {
+				      //multimedia attachment
+                      if(isImage(v.message)) {
+                        //row with image preview
+                        row = getSenderRowAttachment(basePath+v.message,fileName,fileSize,time,true);
+                      }else{
+                        //row with docs
+                        row = getSenderRowAttachment(basePath+v.message,fileName,fileSize,time,false);
+                      }
+                    }else{
+				      //simple text message
+                      row = getSenderRowSimpleText(v.message,time);
+                    }
+                  convElement.append(row);
+				}else{
+				  //receiver row
+				  if(v.isAttachment){
+				    if(isImage(v.message)) {
+				       row = getReceiverRowAttachment(basePath+v.message,fileName,fileSize,time,true);
+                    }else{
+                      row = getReceiverRowAttachment(basePath+v.message,fileName,fileSize,time,false);
+                    }
+                  }else {
+				    //simple text msg
+                    row = getReceiverRowSimpleText(v.message,time);
+                  }
+                  convElement.append(row);
+                }
+
+				row = "";
+			});
+			scrollHeight();
+			markConversationSeen(receiverId,userid);
+		},
+		error:function(err){
+
+		}
+	})
+}
+
+function getSenderRowSimpleText(message,time){
+  return '<div class="row message-body">'+
+          '<div class="col-sm-11 message-main-sender">'+
+          '<div class="sender">'+
+             '<div class="message-text">' + message + '</div>'+
+                    '<span class="message-time pull-right">' + time +' <i onclick="openOptions(this)" class="fa fa-ellipsis-v"></i></span>'+
+                  '</div>'+
+              '</div>'+
+          '</div>';
+}
+
+function openOptions(el){
+  //console.log(this);
+  var msg = $(el).parent().parent().text();
+  $("#userOptionsModal").modal("show");
+  $("#messageToSend").val(msg);
+  $("input[name=messageAddToTask]").val(msg);
+  $("input[name=messageAddToChore]").val(msg);
+  $("input[name=messageAddToReport]").val(msg);
+  $("input[name=messageAddToEmail]").val(msg);
+  console.log(msg);
+}
+
+function getReceiverRowSimpleText(message,time){
+  return '<div class="row message-body">'+
+          '<div class="col-sm-12 message-main-receiver">'+
+          '<div class="receiver">'+
+          '<div class="message-text">' + message + '</div>'+
+          '<span class="message-time pull-right">' + time +' <i onclick="openOptions(this)" class="fa fa-ellipsis-v"></i></span>'+
+          '</div>'+
+          '</div>'+
+          '</div>';
+}
+
+function getSenderRowAttachment(path,fileName,fileSize,time,isImage){
+  if(isImage) {
+    //if attachment is Image
+    return '<div class="row message-body">' +
+            '<div class="col-sm-12 message-main-sender">' +
+            '<div class="sender">' +
+            '<div class="message-text">' +
+            '<img class="image lazy" src="' + path + '">' +
+            '<ul class="msg-list-item">' +
+            '<li><a href="' + path + '" download><i class="fa fa-download"></i></a></li>' +
+            '</li>' + fileName + '</li>' +
+            '<li>' + fileSize + '</li>' +
+            '</ul>' +
+            '<span class="message-time pull-right">' + time + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+  }else{
+    //if attachment is Document
+    return '<div class="row message-body">' +
+            '<div class="col-sm-12 message-main-sender">' +
+            '<div class="sender">' +
+            '<div class="message-text">' +
+            '<img class="document lazy" src="docs.png">' +
+            '<ul class="msg-list-item">' +
+            '<li><a href="' + path + '" download><i class="fa fa-download"></i></a></li>' +
+            '</li>' + fileName + '</li>' +
+            '<li>' + fileSize + '</li>' +
+            '</ul>' +
+            '<span class="message-time pull-right">' + time + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+  }
+}
+
+function getReceiverRowAttachment(path,fileName,fileSize,time,isImage){
+  if(isImage) {
+    //if attachment is Image
+    return '<div class="row message-body">' +
+            '<div class="col-sm-12 message-main-receiver">' +
+            '<div class="receiver">' +
+            '<div class="message-text">' +
+            '<img class="image lazy" src="' + path + '">' +
+            '<ul class="msg-list-item">' +
+            '<li><a href="' + path + '" download><i class="fa fa-download"></i></a></li>' +
+            '</li>' + fileName + '</li>' +
+            '<li>' + fileSize + '</li>' +
+            '</ul>' +
+            '<span class="message-time pull-right">' + time + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+  }else{
+    //if attachment is Document
+    return '<div class="row message-body">' +
+            '<div class="col-sm-12 message-main-receiver">' +
+            '<div class="receiver">' +
+            '<div class="message-text">' +
+            '<img class="document lazy" src="docs.png">' +
+            '<ul class="msg-list-item">' +
+            '<li><a href="' + path + '" download><i class="fa fa-download"></i></a></li>' +
+            '</li>' + fileName + '</li>' +
+            '<li>' + fileSize + '</li>' +
+            '</ul>' +
+            '<span class="message-time pull-right">' + time + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+  }
+}
+
+function getFileNameFromPath(path){
+  var arr = path.split("/");
+  return arr[arr.length - 1];
+}
+
+function getFileSize(url){
+  var size = 0;
+  var http = new XMLHttpRequest();
+  if(url.includes("uploads")){
+    http.open("HEAD", url, false);
+  }else {
+    http.open("HEAD", "uploads/" + url, false);
+  }
+  http.send(null);
+  if(http.status === 200){
+    size = http.getResponseHeader("content-length");
+  }
+  return getFileSizeInMbs(size);
+}
+
+function getFileSizeInMbs(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function isImage(filename){
+  switch (getFileExtension(filename)) {
+      case "jpg":
+      case "jpeg":
+      case "gif":
+      case "png":
+        return true;
+      default: return false
+  }
+}
+
+function isDocument(filename){
+  if(! isImage(getFileExtension(filename))){
+    return true;
+  }else{
+    return false;
+  }
+}
+
+function getFileExtension(name){
+  var arr = name.split(".");
+  return arr[arr.length - 1];
+}
+
+function markConversationSeen(receiverId,senderId){
+	$.ajax({
+		url:'/mark_conversation_seen',
+		type : "POST",
+		data : {"receiverId":receiverId,"senderId":senderId},
+		success:function($res){
+          var n = $('#msgcount'+receiverId);
+          $(n).parent().hide();
+			if(JSON.parse($res).status === 'true') {
+              getUnSeenMessagesCount(senderId);
+            }
+			
+		},
+		error:function(err){
+
+		}
+	});
+}
+
+function login(){
+	var username = $("input[name=username]").val();
+	var password = $("input[name=password]").val();
+	$.ajax({
+		url : "/login",
+		type : "POST",
+		data:{"username":username,"password":password},
+		success : function(res) {
+            if (res) {
+                var json = JSON.parse(res);
+                try {
+                    if (json[0].CO1__Contact_ID !== 'undefined') {
+                        localStorage.setItem(KEY_USER_ID, json[0].CO1__Contact_ID);
+                        localStorage.setItem("username", json[0].First_Name + ' ' + json[0].Last_Name);
+                        initChat(json[0].CO1__Contact_ID);
+                    } else {
+                        popupMessage(false, "Invalid Username Oor password");
+                    }
+                } catch (err) {
+                    popupMessage(false, "Invalid Username or password");
+                }
+            }else{
+                popupMessage(false, "Invalid Username or password");
+            }
+		},
+		error : function(err){
+
+		}
+	});
+}
+
+function initChat(id){
+	userid = parseInt(id);
+	socket.emit('user_connected',id);
+	senderId = userid;
+	popupMessage(true,"You are connected!");
+	getAllUsers();
+	$(".login").hide();
+	$(".app").show();
+}
+
+function popupMessage($status,$message){
+    if($status){
+        Swal.fire({
+            position: 'center',
+            icon: 'success',
+            title: $message,
+            showConfirmButton: false,
+            timer: 1500
+        });
+    }else{
+        Swal.fire({
+            position: 'center',
+            icon: 'error',
+            title: $message,
+            showConfirmButton: false,
+            timer: 1500
+        });
+    }
+}
+
+
+function scrollHeight(){
+    convElement = $("#conversation");
+	convElement.scrollTop(convElement.prop("scrollHeight"));
+	setTimeout(function(){
+      $("#conversation").stop().animate({ scrollTop: $("#conversation")[0].scrollHeight}, 1000);
+    },3000);
+
+}
+
+function getCurrentTime(){
+	var today = new Date();
+	var date = today.getFullYear()+'-'+(today.getMonth()+1)+'-'+today.getDate();
+	var time = today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds();
+	return time;
+}
+
+function getTime($date){
+    //var date = new Date($date);
+	//var time = date.getUTCHours() + ":" + date.getMinutes() + ":" + date.getSeconds();
+    //2020-09-06T20:21:18.000Z
+    //var dd = date.getFullYear()+"-"+(date.getMonth()+1)+"-"+date.getDate()+"T"+time;
+	var dd = duration($date);
+	if(dd){
+		if(dd.days>0){
+			if(dd.days === 1){
+				return dd.days+' day ago';
+		    }else{
+		    	return dd.days+' days ago';
+		    }
+		}else if(dd.hours > 0){
+		  return dd.hours+' hours ago';
+        }else if(dd.minutes > 0){
+			return dd.minutes+' mins ago';
+		}else if(dd.seconds>0){
+			return dd.seconds+' seconds ago';
+		}else{
+		  return "1 second ago"
+        }
+	}else{
+	  return "1 second ago"
+    }
+}
+
+function duration(prevDate){
+	var d1 = new Date();
+	var d2 = new Date(prevDate);
+    let d = (d1) - (d2);
+    let weekdays     = Math.floor(d/1000/60/60/24/7);
+    let days         = Math.floor(d/1000/60/60/24 - weekdays*7);
+    let hours        = Math.floor(d/1000/60/60    - weekdays*7*24            - days*24);
+    let minutes      = Math.floor(d/1000/60       - weekdays*7*24*60         - days*24*60         - hours*60);
+    let seconds      = Math.floor(d/1000          - weekdays*7*24*60*60      - days*24*60*60      - hours*60*60      - minutes*60);
+    let milliseconds = Math.floor(d               - weekdays*7*24*60*60*1000 - days*24*60*60*1000 - hours*60*60*1000 - minutes*60*1000 - seconds*1000);
+    let t = {};
+    ['weekdays', 'days', 'hours', 'minutes', 'seconds', 'milliseconds'].forEach(q=>{ if (eval(q)>0) { t[q] = eval(q); } });
+    return t;
+}
+
+function updateMessageCounter(senderId,total){
+	var n = $('#msgcount'+senderId);
+	if(total >0 ){
+		var num = $(n).text();
+		$(n).empty();
+		$(n).append(total);
+		$(n).parent().show();
+	}
+}
+
+</script>	
+
+</head>
+<body>
+<embed style="display: none" src="tone.mp3" autostart="false" width="0" height="0" id="tone" enablejavascript="true">
+<link rel="stylesheet" href="font-awesome.min.css">
+<div class="container login">
+	
+	<div class="wrapper fadeInDown">
+  <div id="formContent">
+    <!-- Tabs Titles -->
+
+    <!-- Icon -->
+    <div class="fadeIn first">
+      <img class="lazy" src="gsrh_logo.jpg" id="icon" alt="User Icon" />
+    </div>
+
+    <!-- Login Form -->
+      <input type="text" class="fadeIn second" name="username" placeholder="login" >
+      <input type="password" class="fadeIn third" name="password" placeholder="password">
+      <input type="submit" onclick="login()" class="fadeIn fourth" value="Log In">
+
+    <!-- Remind Passowrd -->
+    <div id="formFooter">
+      <a class="underlineHover" href="#">Forgot Password?</a>
+    </div>
+
+  </div>
+</div>	
+    
+</div>
+
+<div class="container app" style="display: none">
+  <div class="row app-one">
+    <div class="col-xs-3 col-sm-3 side">
+      <div class="side-one">
+        <div class="row heading">
+          <div class="col-sm-3 col-xs-3 heading-avatar">
+            <div class="heading-avatar-icon">
+              <img class="lazy" src="no-img.png">
+            </div>
+          </div>
+          <div class="col-sm-5 col-xs-5">
+            <h5 id='username'></h5>
+          </div>
+          <div class="col-sm-1 col-xs-1  heading-dot  pull-right">
+            <i class="fa fa-ellipsis-v fa-2x  pull-right dropbtn" onclick="openPopupForSender()"></i>
+            <div id="senderMenuDropdown" class="dropdown-content">
+              <a onclick="logout()" >Logout</a>
+              <a id="sendToMany" data-toggle="modal" data-target="#sendToManyModal">Group Chat</a>
+            </div>
+          </div>
+          <div style="display:none" class="col-sm-2 col-xs-2 heading-compose  pull-right">
+            <i class="fa fa-comments fa-2x  pull-right" aria-hidden="true"></i>
+          </div>
+        </div>
+
+        <div style="display: none" class="row searchBox">
+          <div class="col-sm-12 searchBox-inner">
+            <div class="form-group has-feedback">
+              <input id="searchText" type="text" class="form-control" name="searchText" placeholder="Search">
+              <span class="glyphicon glyphicon-search form-control-feedback"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row sideBar" id="usersList">
+
+          <!-- <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div> -->
+
+        </div>
+
+      </div>
+
+      <div class="side-two">
+        <div class="row newMessage-heading">
+          <div class="row newMessage-main">
+            <div class="col-sm-2 col-xs-2 newMessage-back">
+              <i class="fa fa-arrow-left" aria-hidden="true"></i>
+            </div>
+            <div class="col-sm-10 col-xs-10 newMessage-title">
+              New Chat
+            </div>
+          </div>
+        </div>
+
+        <div class="row composeBox">
+          <div class="col-sm-12 composeBox-inner">
+            <div class="form-group has-feedback">
+              <input id="composeText" type="text" class="form-control" name="searchText" placeholder="Search People">
+              <span class="glyphicon glyphicon-search form-control-feedback"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row compose-sideBar">
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row sideBar-body">
+            <div class="col-sm-3 col-xs-3 sideBar-avatar">
+              <div class="avatar-icon">
+                <img class="lazy" src="no-img.png">
+              </div>
+            </div>
+            <div class="col-sm-9 col-xs-9 sideBar-main">
+              <div class="row">
+                <div class="col-sm-8 col-xs-8 sideBar-name">
+                  <span class="name-meta">John Doe
+                </span>
+                </div>
+                <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                  <span class="time-meta pull-right">18:18
+                </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:none" class="col-xs-9 col-sm-9 conversation">
+      <div class="row heading">
+        <div class="col-sm-2 col-md-1 col-xs-3 heading-avatar">
+          <div class="heading-avatar-icon">
+            <img class="receiverImg lazy" src="no-img.png">
+          </div>
+        </div>
+        <div class="col-sm-8 col-xs-7 heading-name">
+          <a class="heading-name-meta">John Doe
+          </a>
+          <p class="heading-online"></p>
+        </div>
+        <div class="col-sm-1 col-xs-1  heading-dot pull-right dropdown">
+          <i class="fa fa-ellipsis-v fa-2x  pull-right dropbtn" onclick="openPopupForReceiver(this)"></i>
+          <div id="receiverDropDown" class="dropdown-content">
+          </div>
+        </div>
+      </div>
+
+      <div class="row message" id="conversation">
+        <!-- <div style="disply:none" class="row message-previous">
+          <div class="col-sm-12 previous">
+            <a onclick="previous(this)" id="ankitjain28" name="20">
+            Show Previous Message!
+            </a>
+          </div>
+        </div> -->
+      </div>
+
+      <div class="row reply">
+        <div class="col-sm-1 col-xs-1 iconFileUpload">
+          <i class="fa fa-upload fa-2x" onclick="document.getElementById('FileBox').click();"></i>
+        </div>
+        <div class="col-sm-9 col-xs-9 reply-main">
+          <textarea class="form-control" rows="1" id="message"></textarea>
+        </div>
+        <div style="display:none" class="col-sm-1 col-xs-1 reply-recording">
+          <i class="fa fa-microphone fa-2x" aria-hidden="true"></i>
+        </div>
+        <div class="col-sm-1 col-xs-1 reply-send" id="btnSend">
+          <i class="fa fa-send fa-2x" aria-hidden="true"></i>
+        </div>
+      </div>
+    </div>
+    <div style="height:100%;" class="col-xs-9 col-sm-9 emptyMsg">
+      <h3 style="position:absolute;top:50%">Click on Contact List & Start Chatting...</h3>
+    </div>
+  </div>
+</div>
+
+<!-- create Group Modal -->
+<div class="modal fade" id="sendToManyModal" role="dialog">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal">&times;</button>
+        <h4 class="modal-title">Group Chat</h4>
+      </div>
+      <div class="modal-body">
+        <div class="col-sm-12">
+          <div class="form-group">
+            <label>Select to whom you wanted to sent</label>
+            <select class="form-control" name="userType" >
+              <option value="0"></option>
+              <option value="allStaff">All Staff</option>
+              <option value="allResidents">All Residents</option>
+              <option value="selectUser">Select User(s)</option>
+            </select>
+          </div>
+        </div>
+        <div class="col-sm-12">
+          <div class="form-group users" style="display: none">
+            <label>Select User(s)</label>
+            <select class="form-control" id="users" name="users" multiple style="width: 100%">
+              <option value="0"></option>
+            </select>
+          </div>
+        </div>
+        <div class="col-sm-12">
+          <div class="form-group">
+            <label>Type your message</label>
+            <textarea class="form-control" id="my_msg" name="my_msg"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+        <button  type='button' id='btnSendMsgMany' class='btn btn-success'>Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="uploadModal" role="dialog">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal">&times;</button>
+        <h4 class="modal-title">Send File</h4>
+      </div>
+      <div class="modal-body">
+        <div id="UploadBox">
+          <div class="row">
+            <div class="col-sm-12">
+              <table class="table table-responsive">
+                <thead>
+                  <th>Preview</th>
+                  <th>File Name</th>
+                  <th>Size</th>
+                  <th>Action</th>
+                </thead>
+                <tbody id="fileList">
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <span id='UploadArea'>
+            <input style="display: none" type="file" id="FileBox" accept="image/*, .pdf,.doc,.docx,.xls,.xlsx"><br>
+         </span>
+
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="cancelButton" class="btn btn-default" data-dismiss="modal">Cancel</button>
+        <button  type='button' id='UploadButton' class='btn btn-success'>Upload & Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- message user menu model -->
+<div class="modal fade" id="userOptionsModal">
+  <div class="modal-dialog modal-sm" style="width:200px">
+    <div class="modal-content">
+     <div class="modal-body">
+        <div class="list-group">
+             <input type="hidden" id="messageToSend">
+            <form target="_blank" method="post" action="http://services.goodshepherdrecoveryhouse.org/allTasks.php">
+              <input type="submit" id="addToTask" value="Add to Task" class="list-group-item submit">
+              <input type="hidden" name="messageAddToTask" value="">
+            </form>
+            <form target="_blank" method="post" action="http://services.goodshepherdrecoveryhouse.org/allChores.php">
+              <input type="submit" id="addToChore" value="Add to Chore" class="list-group-item submit">
+              <input type="hidden" name="messageAddToChore" value="">
+            </form>
+            <div>
+              <input type="submit" id="addToReport" value="Add to Report" class="list-group-item submit">
+              <input type="text" aria-hidden="true" style="position: absolute;left: -999em;" id="msgAddToReport" name="messageAddToReport">
+            </div>
+            <form target="_blank" method="post" action="http://services.goodshepherdrecoveryhouse.org/edit.php?t=Emails&u=a&cid=">
+              <input type="submit" id="addToEmail" value="Add to Email" class="list-group-item submit">
+              <input type="hidden" name="messageAddToEmail" value="">
+            </form>
+          </div>
+    </div>
+</div>
+  </div>
+</div>
+<script type="text/javascript">
+
+  $(document).ready(function(){
+
+    $(function() {
+      $('.lazy').Lazy();
+    });
+
+      $("#sendToManyModal").on('shown.bs.modal',function(){
+          getAllClients();
+         // console.log('modal shown event');
+      });
+    //on model hide event empty all values in send to many modal
+    $("#sendToManyModal").on('hidden.bs.modal',function(){
+        $(this).find("textarea[name=my_msg]").val("");
+        $(this).find('select[name=userType]').val(0);
+        $(this).find('select[name=users]').val(null).trigger("change");
+        $(this).find('.users').hide();
+        //console.log("model hidden event")
+    });
+
+      $("select[name=userType]").change(function () {
+          var selectedItem = $(this).find("option:selected").val();
+          if(selectedItem === "selectUser"){
+            $(".users").show();
+          }else{
+            $(".users").hide();
+          }
+      })
+      //interval to update conversation in every 30 seconds
+      $(function () {
+       // setInterval(updateTime,30*1000);
+      });
+      $('.fileUploadArea').hide();
+      $('.fa-upload').click(function () {
+
+      })
+      $(".close").click(function () {
+          emptySelectedFiles();
+      });
+
+      $("#addToReport").click(function () {
+          var msg = document.getElementById("msgAddToReport");
+          copyTextToClipBoard(msg);
+      });
+
+      //group creationg
+      $("#btnSendMsgMany").click(function () {
+          var s = $('select[name=userType] option:selected').val();
+          var message = $("textarea[name=my_msg]").val();
+        if(message.length > 0) {
+          if (s === "allStaff") {
+            //send message to all clients
+            sendMessageToAllStaff(message);
+          } else if (s === "allResidents") {
+            //send message to all residents
+            sendMessageToAllResidents(message);
+          } else if (s === "selectUser") {
+            //send message to all selected Users
+            var selectedUsers = $("select[name=users]").val();
+            //console.log(selectedUsers);
+            if (selectedUsers.length > 0) {
+              sendMessageToSelectedUsers(selectedUsers, message);
+            } else {
+              popupMessage(false, "Please select user(s) to send Message");
+            }
+          } else {
+            popupMessage(false, "Please Select to Whom you wanted to sent Message");
+          }
+        }else{
+          popupMessage(false,"Please type message first");
+        }
+
+      })
+  });
+  function sendMessageToAllStaff(message) {
+    socket.emit('message_to_all_staff',{'senderId':senderId,"message":message});
+  }
+
+  function sendMessageToAllResidents(message) {
+    socket.emit('message_to_all_residents',{'senderId':senderId,"message":message});
+  }
+  function sendMessageToSelectedUsers(users,message){
+    socket.emit('message_to_selected_users',{"senderId":senderId,"message":message,
+    "users":users});
+  }
+
+function copyTextToClipBoard(msg){
+  msg.select();
+  msg.setSelectionRange(0,99999);
+  document.execCommand("copy");
+  popupMessage(true,"Message Copied to Clipboard");
+  $("#userOptionsModal").modal("hide");
+
+}
+
+function openPopupForReceiver() {
+   document.getElementById("receiverDropDown").classList.toggle("show");
+}
+
+function openPopupForSender() {
+  document.getElementById("senderMenuDropdown").classList.toggle("show");
+}
+
+function logout(){
+    var c = confirm("Are you sure you want to loged out ?");
+    if(c){
+      localStorage.clear();
+      window.location.href = "/";
+    }
+}
+
+function getReceiverPhoneNumber(receiverId){
+    $.ajax({
+      url : "/get_client_phone",
+      method : "post",
+      type : "JSON",
+      data : {"contactId":receiverId},
+      success : function(resp){
+          try{
+            var j = JSON.parse(resp);
+            $("#receiverDropDown").empty();
+            $("#receiverDropDown").append('<a href="tel:'+j[0].phone+'">Call '+j[0].username+'</a>');
+          }catch (err) {
+            console.log(err);
+          }
+      },
+      error : function (err){
+        console.log(err);
+      }
+    })
+}
+
+window.onclick = function(event) {
+  if (!event.target.matches('.dropbtn')) {
+    var dropdowns = document.getElementsByClassName("dropdown-content");
+    var i;
+    for (i = 0; i < dropdowns.length; i++) {
+      var openDropdown = dropdowns[i];
+      if (openDropdown.classList.contains('show')) {
+        openDropdown.classList.remove('show');
+      }
+    }
+  }
+}
+
+$(function(){
+    $(".heading-compose").click(function() {
+      $(".side-two").css({
+        "left": "0"
+      });
+    });
+
+    $(".newMessage-back").click(function() {
+      $(".side-two").css({
+        "left": "-100%"
+      });
+    });
+});
+
+function playTone(){
+  var audio = new Audio('tone.mp3')
+  audio.play()
+  //$("#tone").play();
+}
+/*
+file reader codes
+ */
+  var Files = [];
+  $(document).ready(function () {
+      $("#UploadButton").click(function () {
+          if(Files.length > 0) {
+            startUpload(0);
+            disableUploadButton(true);
+          }
+      });
+      $("#FileBox").change(function(file){
+        $('#fileList').empty();
+        $.each(file.target.files,function (k,f) {
+          /* if its an image generate preview */
+          Files.push(f);
+          if(isImage(f.type)){
+              var reader = new FileReader();
+              reader.onload = function(e){
+                imgSrc = e.target.result;
+                var row = '<tr>' +
+                        '<td><img class="lazy" src="'+imgSrc+'" style="width: 40px"></td>' +
+                        '<td><label style="text-align: center" class="name">' + f.name + '<br/><div style="display: none" class="progress"><div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>' +
+                        '</div><span class="percent"></span></label></td>' +
+                        '<td><label class="size">' + f.size + ' KB</label></td>' +
+                        '<td><button class="btn btn-sm btn-danger" onclick="deleteFile('+k+')">delete</button></td>' +
+                        '</tr>';
+                $('#fileList').append(row);
+              }
+              reader.readAsDataURL(f);
+          }else {
+            var row = '<tr>' +
+                    '<td><img class="lazy" src="ic-file.png" style="width: 40px"></td>' +
+                    '<td><label style="text-align: center" class="name">' + f.name + '<br/><div style="display: none" class="progress"><div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>' +
+                    '</div><span class="percent"></span></label></td>' +
+                    '<td><label class="size">' + f.size + ' KB</label></td>' +
+                    '<td><button class="btn btn-sm btn-danger" onclick="deleteFile('+k+')">delete</button></td>' +
+                    '</tr>';
+            $('#fileList').append(row);
+          }
+        });
+        $('#uploadModal').modal('show');
+      });
+  });
+  function disableUploadButton(b){
+      $("#UploadButton").prop('disabled',b);
+      $("#cancelButton").prop('disabled',b);
+  }
+  /*
+  function to delete selected file with their index
+  */
+  function deleteFile(index){
+    deleteArrayElement(index);
+    $('#fileList tr:nth-child('+(index+1)+')').remove();
+    var tr = $("#fileList tr");
+    if(tr.length === 0){
+      $("#uploadModal").modal('hide');
+      emptySelectedFiles();
+    }
+  }
+  function deleteArrayElement(index){
+    var arr = Files;
+    Files = [];
+    for(i=0;i<arr.length;i++){
+      if(i !== index){
+        Files.push(arr[i]);
+      }
+    }
+  }
+
+  /*
+  JS function to detect preview if file selected is an image
+   */
+  function isImage(type){
+    if(type.includes("jpg") || type.includes("png") || type.includes("jpeg") || type.includes("gif")){
+      return true;
+    }
+    return false;
+  }
+
+// window.addEventListener("load", Ready);
+// function Ready(){
+//   if(window.File && window.FileReader){ //These are the relevant HTML5 objects that we are going to use
+//     document.getElementById('UploadButton').addEventListener('click', StartUpload);
+//     document.getElementById('FileBox').addEventListener('change', FileChosen);
+//   }
+//   else
+//   {
+//     document.getElementById('UploadArea').innerHTML = "Your Browser Doesn't Support The File API Please Update Your Browser";
+//   }
+// }
+
+// function FileChosen(evnt) {
+//   SelectedFile = evnt.target.files[0];
+//   document.getElementById('NameBox').value = SelectedFile.name;
+//   $('#uploadModal').modal('show');
+// }
+var FReader;
+var Name;
+var currentFile;
+var eachBlockSize = 24288;
+$(document).ready(function () {
+
+
+
+
+  $('#uploadModal').on('hide.bs.modal', function () {
+    emptySelectedFiles();
+    console.log('modal hide event');
+  });
+
+});
+
+function emptySelectedFiles(){
+  $("#FileBox").val(null);
+  $('#fileList').empty();
+  Files = [];
+  disableUploadButton(false);
+}
+
+
+function startUpload(k){
+    var v = Files[k];
+    FReader = new FileReader();
+    Name = v.name;
+    currentFile = v;
+    initProgressbar(k,v.size);
+    FReader.onload = function (evnt) {
+      socket.emit('Upload', {'name': Name, data: evnt.target.result,'index':k,'senderId':senderId,'receiverId':receiverId});
+    }
+    socket.emit('Start', {'name': Name, 'size': v.size,'index':k,'senderId':senderId,'receiverId':receiverId});
+}
+
+socket.on('MoreData', function (data){
+  UpdateBar(data);
+  var Place = data['place'] * eachBlockSize; //The Next Blocks Starting Position
+  var NewFile; //The Variable that will hold the new Block of Data
+  if(currentFile.slice)
+    NewFile = currentFile.slice(Place, Place + Math.min(eachBlockSize, (currentFile.size-Place)));
+  else
+    NewFile = currentFile.mozSlice(Place, Place + Math.min(eachBlockSize, (currentFile.size-Place)));
+  FReader.readAsBinaryString(NewFile);
+
+});
+
+socket.on('Done',function(data){
+  setProgress(data['index'],100);
+  var date = new Date();
+  var fileName = getFileNameFromPath(data["path"]);
+  var fileSize = getFileSize(data["path"]);
+  var time = getTime(date);
+  var row = "";
+  if(isImage(data['path'])) {
+    //its an Image attachment
+    row = getSenderRowAttachment(data["path"],fileName,fileSize,time,true);
+  }else{
+    //its a document attachment
+    row = getSenderRowAttachment(data["path"],fileName,fileSize,time,false);
+  }
+  convElement.append(row);
+  if ((data["index"] + 1) >= Files.length) {
+    popupMessage(true, "File Uploaded Success");
+    $('.conversation').show();
+    $("#uploadModal").modal('hide');
+    emptySelectedFiles();
+    scrollHeight();
+  } else {
+    startUpload(data["index"] + 1);
+  }
+
+});
+
+function UpdateBar(data){
+  var percent = data['percent'];
+  var index = data['index'];
+  setProgress(index,percent);
+  //var mbDone = Math.round(((percent/100.0) * currentFile.size) / 1048576);
+  //$(el).find('.mbs').html(mbDone+" MB");
+}
+  function initProgressbar(index,fileSize){
+    var percent = (eachBlockSize/2) * 100 / fileSize
+    setProgress(index,percent);
+    //var mbDone = Math.round(fileSize / 1048576) + " MB";
+    //$(el).find('.mbs').html(mbDone);
+  }
+
+  function setProgress(index,percent){
+    index += 1;
+    var el = $('#fileList tr:nth-child('+index+')')[0];
+    $(el).find('.progress-bar').css("width",percent+"%");
+    $(el).find('.progress').show();
+    $(el).find('.percent').html(percent+"%");
+  }
+</script>
+</body>
+</html>

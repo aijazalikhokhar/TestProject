@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <!-- This file has been downloaded from Bootsnipp.com. Enjoy! -->
+    <title>Chat - GSRH</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="../jquery.min.js"></script>
+</head>
+<body>
+<input type="hidden" value="<%=userid%>" name="userid">
+</body>
+<script>
+    $(document).ready(function () {
+        var userid = $("input[name=userid]").val();
+        if(localStorage){
+            console.log("received user id"+userid);
+            localStorage.setItem("userid",userid);
+            window.location.href = "/";
+        }
+    })
+</script>
+</html>
